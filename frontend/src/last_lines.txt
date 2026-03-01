@@ -1,0 +1,10 @@
+            <div className="animate-fade-in"><SetupPanel /></div>
+        </div>
+        
+        <div style={{ display: tab === "health" ? "block" : "none" }}>
+            <div className="animate-fade-in"><HealthPanel /></div></div><div style={{ display: tab === "info" ? "block" : "none" }}><div className="animate-fade-in"><InfoPanel /></div></div>
+        </div>
+      </main>
+    </div>
+  );
+}

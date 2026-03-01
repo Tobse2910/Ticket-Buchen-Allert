@@ -1,0 +1,20 @@
+          </div>
+        </div>
+        
+        <div style={{ display: tab === "alerts" ? "block" : "none" }}>
+            <div className="animate-fade-in"><AlertsPanel /></div>
+        </div>
+        
+        <div style={{ display: tab === "add" ? "block" : "none" }}>
+            <div className="animate-fade-in"><AddEventPanel onAdded={() => { setTab("dashboard"); fetchMonitors(); }} /></div>
+        </div>
+        
+        <div style={{ display: tab === "setup" ? "block" : "none" }}>
+            <div className="animate-fade-in"><SetupPanel /></div>
+        </div>
+        
+        <div style={{ display: tab === "health" ? "block" : "none" }}><div className="animate-fade-in"><HealthPanel /></div></div><div style={{ display: tab === "info" ? "block" : "none" }}><div className="animate-fade-in"><InfoPanel /></div></div>
+      </main>
+    </div>
+  );
+}

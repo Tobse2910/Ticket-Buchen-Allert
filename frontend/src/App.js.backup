@@ -1,0 +1,298 @@
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import axios from "axios";
+
+// API Configuration
+const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:3001/api";
+
+// ─── DATA CONFIG ─────────────────────────────────────────────────────────────
+
+const STATUS_CONFIG = {
+  AVAILABLE:  { label: "VERFÜGBAR",       abbr: "AVL", fg: "#16a34a", bg: "#052e16", bar: "#22c55e" },
+  WAITING:    { label: "WARTEN",           abbr: "WAT", fg: "#ca8a04", bg: "#1c1400", bar: "#eab308" },
+  QUEUE:      { label: "WARTESCHLANGE",    abbr: "QUE", fg: "#c2410c", bg: "#1c0a00", bar: "#f97316" },
+  OFFLINE:    { label: "NICHT VERFÜGBAR", abbr: "OFF", fg: "#6b7280", bg: "#111113", bar: "#374151" },
+  ERROR:      { label: "FEHLER",           abbr: "ERR", fg: "#dc2626", bg: "#1c0000", bar: "#ef4444" },
+};
+
+// ─── ATOMS ───────────────────────────────────────────────────────────────────
+
+function Bracket({ children, color = "#374151", className = "" }) {
+  return (
+    <div className={`relative ${className}`}>
+      <span className="absolute w-2 h-2 top-0 left-0 border-t border-l" style={{ borderColor: color }} />
+      <span className="absolute w-2 h-2 top-0 right-0 border-t border-r" style={{ borderColor: color }} />
+      <span className="absolute w-2 h-2 bottom-0 left-0 border-b border-l" style={{ borderColor: color }} />
+      <span className="absolute w-2 h-2 bottom-0 right-0 border-b border-r" style={{ borderColor: color }} />
+      {children}
+    </div>
+  );
+}
+
+function StatusBadge({ status, large }) {
+  const c = STATUS_CONFIG[status] || STATUS_CONFIG.OFFLINE;
+  return (
+    <span className={`inline-block font-['Barlow_Condensed'] font-bold border border-opacity-30 uppercase transition-colors`}
+      style={{
+        background: c.bg,
+        color: c.fg,
+        borderColor: c.fg,
+        fontSize: large ? '13px' : '10px',
+        letterSpacing: large ? '2px' : '1.5px',
+        padding: large ? '4px 10px' : '2px 7px',
+      }}>
+      {c.abbr}
+    </span>
+  );
+}
+
+function PingBar({ ms }) {
+  const w = Math.min(100, (ms / 1200) * 100);
+  const col = ms < 400 ? "#16a34a" : ms < 800 ? "#ca8a04" : "#dc2626";
+  return (
+    <div className="flex items-center gap-2 w-full">
+      <div className="flex-1 h-[2px] bg-[#1f2937]">
+        <div className="h-full transition-all duration-500" style={{ width: `${w}%`, background: col }} />
+      </div>
+      <span className="text-[10px] tabular-nums font-mono min-w-[40px] text-right" style={{ color: col }}>{ms}ms</span>
+    </div>
+  );
+}
+
+// ─── COMPONENTS ─────────────────────────────────────────────────────────────
+
+function MonitorPanel({ m, onTrigger }) {
+  const c = STATUS_CONFIG[m.status] || STATUS_CONFIG.OFFLINE;
+  return (
+    <Bracket color={`${c.fg}66`} className="p-5 bg-[#0c0c0f] animate-fade-in h-full flex flex-col justify-between">
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <div className="text-[9px] text-[#374151] tracking-[1px] mb-1 font-mono uppercase">
+            {m.shortName} · {m.mode}
+          </div>
+          <div className="font-['Barlow_Condensed'] text-[19px] font-bold text-[#e5e7eb] tracking-[1px] leading-tight">
+            {m.name}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="font-['Barlow_Condensed'] text-[28px] font-bold leading-none tracking-[1px]" style={{ color: c.fg }}>
+            {c.abbr}
+          </div>
+          <div className="text-[9px] text-[#374151] font-mono mt-1 uppercase">{c.label}</div>
+        </div>
+      </div>
+
+      <div className="h-[2px] bg-[#1a1a1e] mb-3 relative overflow-hidden">
+        <div className="h-full transition-all duration-1000" 
+             style={{ 
+               width: m.status === "AVAILABLE" ? "100%" : m.status === "WAITING" ? "45%" : m.status === "QUEUE" ? "25%" : "5%", 
+               background: c.bar 
+             }} />
+      </div>
+
+      <PingBar ms={m.ping} />
+
+      <div className="flex justify-between mt-3 mb-4">
+        <div>
+          <div className="text-[9px] text-[#374151] font-mono mb-1 uppercase tracking-wider">Checks</div>
+          <div className="text-[15px] text-[#9ca3af] font-mono font-semibold">{m.checks.toLocaleString("de-DE")}</div>
+        </div>
+        <div>
+          <div className="text-[9px] text-[#374151] font-mono mb-1 uppercase tracking-wider">Intervall</div>
+          <div className="text-[15px] text-[#9ca3af] font-mono font-semibold">{m.interval}s</div>
+        </div>
+        <div>
+          <div className="text-[9px] text-[#374151] font-mono mb-1 uppercase tracking-wider">Trigger</div>
+          <div className={`text-[15px] font-mono font-semibold ${m.triggers > 0 ? "text-[#22c55e]" : "text-[#9ca3af]"}`}>{m.triggers}</div>
+        </div>
+      </div>
+
+      <button
+        onClick={() => onTrigger(m.id)}
+        className="w-full bg-transparent border py-2 text-[10px] font-mono tracking-[1.5px] uppercase transition-all duration-200 hover:brightness-125"
+        style={{ color: c.fg, borderColor: `${c.fg}44` }}
+      >
+        ▸ SIMULATE TRIGGER
+      </button>
+    </Bracket>
+  );
+}
+
+// ─── MAIN APP ────────────────────────────────────────────────────────────────
+
+export default function App() {
+  const [tab, setTab] = useState("dashboard");
+  const [monitors, setMonitors] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [releaseMode, setReleaseMode] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [clock, setClock] = useState(new Date().toLocaleTimeString("de-DE"));
+  const [uptime, setUptime] = useState(13462);
+
+  const fetchMonitors = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/monitors`);
+      setMonitors(res.data);
+    } catch (err) {
+      console.error("Fetch error:", err);
+    }
+  }, []);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/logs`);
+      setLogs(res.data);
+    } catch (err) {
+      console.error("Fetch logs error:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMonitors();
+    fetchLogs();
+    
+    const clockInterval = setInterval(() => {
+      setClock(new Date().toLocaleTimeString("de-DE"));
+      setUptime(u => u + 1);
+    }, 1000);
+
+    const pollingInterval = setInterval(() => {
+        fetchMonitors();
+        fetchLogs();
+    }, 3000);
+
+    return () => {
+        clearInterval(clockInterval);
+        clearInterval(pollingInterval);
+    };
+  }, [fetchMonitors, fetchLogs]);
+
+  const handleTrigger = async (id) => {
+    const mon = monitors.find(m => m.id === id);
+    if (!mon) return;
+
+    try {
+        await axios.post(`${API_BASE_URL}/trigger`, { monitorId: id, status: "AVAILABLE" });
+        setToast(mon);
+        setTimeout(() => setToast(null), 5000);
+        
+        // n8n Webhook / Backend wird benachrichtigt.
+        // Simulierte Rücksetzung nach 9 Sekunden
+        setTimeout(async () => {
+            await axios.post(`${API_BASE_URL}/trigger`, { monitorId: id, status: "WAITING" });
+        }, 9000);
+    } catch (err) {
+        console.error("Trigger error:", err);
+    }
+  };
+
+  const fmtUptime = (s) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
+  };
+
+  const levelColor = { INFO: "#4b5563", WARN: "#92400e", ERR: "#7f1d1d", OK: "#14532d" };
+  const levelFg    = { INFO: "#9ca3af", WARN: "#fbbf24", ERR: "#f87171", OK:  "#4ade80" };
+
+  return (
+    <div className="min-h-screen bg-[#090909] text-[#e5e7eb] font-mono relative overflow-hidden selection:bg-[#374151]">
+      <div className="scanline" />
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-[1000] bg-[#052e16] border border-[#16a34a] p-5 w-[310px] animate-alert-in shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+          <div className="text-[9px] text-[#16a34a] tracking-[2px] mb-1.5 font-['Barlow_Condensed'] font-bold uppercase">
+            ▸ Triggered Detected
+          </div>
+          <div className="font-['Barlow_Condensed'] text-[17px] font-bold text-[#4ade80] tracking-[0.5px] mb-1.5">
+            {toast.name}
+          </div>
+          <div className="text-[10px] text-[#16a34a] font-mono uppercase italic">Telegram Alert Dispatched · {clock}</div>
+        </div>
+      )}
+
+      {/* Topbar */}
+      <nav className="border-b border-[#1a1a1e] flex items-stretch h-11 sticky top-0 z-[100] bg-[#090909]">
+        <div className="border-r border-[#1a1a1e] px-5 flex items-center gap-2.5 min-w-[200px]">
+          <span className="text-[11px] text-[#374151]">◈</span>
+          <span className="font-['Barlow_Condensed'] text-[14px] font-extrabold tracking-[3px] text-[#e5e7eb] uppercase">Ticket Wächter</span>
+        </div>
+
+        {["dashboard", "alerts", "setup", "health"].map(t => (
+          <button key={t} onClick={() => setTab(t)} 
+            className={`bg-transparent border-none border-r border-[#1a1a1e] px-5 font-['Barlow_Condensed'] font-bold text-[11px] tracking-[2px] uppercase cursor-pointer transition-all border-b-2 ${tab === t ? "text-[#e5e7eb] border-b-[#e5e7eb]" : "text-[#4b5563] border-b-transparent hover:text-[#9ca3af]"}`}>
+            {t}
+          </button>
+        ))}
+
+        <div className="flex-1" />
+
+        <button onClick={() => setReleaseMode(r => !r)}
+          className={`border-none border-l border-[#1a1a1e] px-5 font-['Barlow_Condensed'] font-bold text-[11px] tracking-[2px] uppercase cursor-pointer transition-colors ${releaseMode ? "bg-[#7f1d1d] text-[#fca5a5]" : "text-[#374151] hover:text-[#4b5563]"}`}>
+          {releaseMode ? "▸ Release Mode ON" : "Release Mode"}
+        </button>
+
+        <div className="border-l border-[#1a1a1e] px-5 flex items-center font-mono text-[11px] text-[#4b5563] tracking-[1px] min-w-[120px] tabular-nums">
+          <span className="animate-blink mr-1.5 text-[#16a34a]">▪</span>
+          {clock}
+        </div>
+      </nav>
+
+      {/* Status Strip */}
+      <div className="border-b border-[#1a1a1e] flex h-[30px] overflow-hidden bg-[#050505] text-[9px]">
+        {[
+          { k: "NODE",      v: "v20.11.0",        ok: true  },
+          { k: "API",       v: "online",          ok: true  },
+          { k: "N8N",       v: "webhook set",     ok: true  },
+          { k: "TELEGRAM",  v: "connected",        ok: true  },
+          { k: "UPTIME",    v: fmtUptime(uptime),  ok: true  },
+          { k: "INTERVAL",  v: releaseMode ? "2s 🔴" : "3s", ok: true },
+        ].map((item, i) => (
+          <div key={i} className="border-r border-[#1a1a1e] px-3.5 flex items-center gap-2 whitespace-nowrap">
+            <span className="text-[#374151] tracking-[1px] font-bold">{item.k}</span>
+            <span className={`font-medium ${item.ok ? "text-[#6b7280]" : "text-[#fbbf24]"}`}>{item.v}</span>
+          </div>
+        ))}
+      </div>
+
+      <main className="p-6 max-w-[1400px] mx-auto">
+        {tab === "dashboard" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {monitors.map(m => (
+              <MonitorPanel key={m.id} m={m} onTrigger={handleTrigger} />
+            ))}
+
+            <div className="col-span-full mt-4">
+              <div className="border-b border-[#1a1a1e] pb-2 mb-0 flex justify-between items-center">
+                <span className="font-['Barlow_Condensed'] text-[11px] font-bold text-[#4b5563] tracking-[2px]">LIVE LOG STREAM</span>
+                <span className="text-[9px] text-[#374151] flex items-center uppercase font-bold">
+                  <span className="animate-blink mr-1 text-[#16a34a]">▪</span> STREAMING
+                </span>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto bg-[#050505] border border-[#1a1a1e] border-t-0 font-mono text-[10px]">
+                {logs.map((l, idx) => (
+                  <div key={idx} className="grid grid-cols-[80px_45px_1fr] border-b border-[#0e0e10] hover:bg-[#0a0a0c] transition-colors">
+                    <span className="p-1.5 px-3 text-[#374151] border-r border-[#0e0e10] tabular-nums">{l.ts}</span>
+                    <span className="p-1.5 px-2 text-center text-[9px] font-bold border-r border-[#0e0e10]" style={{ background: levelColor[l.level], color: levelFg[l.level] }}>{l.level}</span>
+                    <span className="p-1.5 px-3 text-[#6b7280]">{l.msg}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Placeholder für weitere Tabs */}
+        {tab !== "dashboard" && (
+            <div className="flex flex-col items-center justify-center h-[50vh] text-[#374151] animate-fade-in">
+                <div className="text-4xl mb-4 opacity-20">◈</div>
+                <div className="tracking-[3px] font-bold uppercase text-xs">Section Under Maintenance</div>
+                <div className="text-[10px] mt-2 opacity-50">TAB: {tab.toUpperCase()}</div>
+            </div>
+        )}
+      </main>
+    </div>
+  );
+}

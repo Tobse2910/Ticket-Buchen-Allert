@@ -1,0 +1,14 @@
+# Abhängigkeiten
+node_modules/
+
+# Umgebungsvariablen und Credentials (WICHTIG!)
+.env
+backend/.env
+
+# Build Ordner
+build/
+dist/
+
+# Mac / Windows System Dateien
+.DS_Store
+Thumbs.db
