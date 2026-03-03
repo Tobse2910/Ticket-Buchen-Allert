@@ -10,7 +10,7 @@ export function AlertsPanel() {
   useEffect(() => {
     const fetchMonitors = async () => {
       try {
-        const res = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:3001'}/api/monitors`);
+        const res = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:3001'}/api/events`);
         setMonitors(res.data);
       } catch (err) {
         console.error(err);

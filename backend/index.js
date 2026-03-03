@@ -37,10 +37,26 @@ initBot();
 
 function sendTelegramMessage(message) {
   if (bot && chatId) {
-    bot.sendMessage(chatId, message).catch(console.error);
+    bot.sendMessage(chatId, message).catch(err => {
+        console.error('Telegram Error:', err);
+        addLog('ERROR', 'TELEGRAM · Senden fehlgeschlagen: ' + err.message);
+    });
   } else {
-    console.log('TELEGRAM MSG:', message);
+    // console.log('TELEGRAM MSG (Not Configured):', message);
+    addLog('WARN', 'TELEGRAM · Nicht konfiguriert, Nachricht ignoriert');
   }
+}
+
+async function sendN8nWebhook(data) {
+    if(settings.n8nWebhookUrl && settings.n8nWebhookUrl.startsWith('http')) {
+        try {
+            await axios.post(settings.n8nWebhookUrl, data);
+            addLog('INFO', 'N8N · Webhook gesendet');
+        } catch(err) {
+            console.error('N8N Error:', err);
+            addLog('ERROR', 'N8N · Webhook fehlgeschlagen: ' + err.message);
+        }
+    }
 }
 
 // In-Memory Daten - Zukünftig erweiterbar über API / Frontend
@@ -142,7 +158,15 @@ async function checkTicketmaster(monitor) {
             monitor.status = 'AVAILABLE';
             monitor.triggers += 1;
             addLog('INFO', 'TRIGGER · ' + monitor.shortName + ' · TICKET EVENT GEFUNDEN!');
-            sendTelegramMessage('🚨 ALARM: TICKET EVENT VERFUEGBAR! 🚨\n\nMonitor: ' + monitor.name + '\nStatus hat sich geaendert!\nKlick hier zum Kaufen: ' + monitor.url);
+            sendTelegramMessage('🚨 ALARM: TICKET EVENT VERFUEGBAR! 🚨\n\nMonitor: ' + monitor.name + '\nClick: ' + monitor.url);
+            
+            // Send to N8N as well if configured
+            sendN8nWebhook({
+                monitor: monitor.name,
+                url: monitor.url,
+                keywords_found: monitor.customKeywords,
+                timestamp: new Date().toISOString()
+            });
         }
         addLog('INFO', 'CHK #' + monitor.checks + ' · ' + monitor.shortName + ' · Events gefunden! · ' + monitor.ping + 'ms');
     } else {
@@ -188,25 +212,31 @@ app.get('/api/history', (req, res) => res.json(logs));
 app.get('/api/settings', (req, res) => res.json(settings));
 
 app.post('/api/settings', (req, res) => {
-  const { telegramToken, telegramChatId } = req.body;
+  const { telegramToken, telegramChatId, n8nWebhookUrl } = req.body;
   
   // Update mem
   token = telegramToken;
   chatId = telegramChatId;
   settings.telegramToken = token;
   settings.telegramChatId = chatId;
+  settings.n8nWebhookUrl = n8nWebhookUrl || '';
   
   // Reboot bot
   initBot();
   
   // Save to .env
   const envPath = path.join(__dirname, '.env');
-  const envContent = `PORT=3001\nTELEGRAM_TOKEN=${token || ''}\nTELEGRAM_CHAT_ID=${chatId || ''}\nN8N_WEBHOOK_URL=\n`;
+  const envContent = `PORT=3001
+TELEGRAM_TOKEN=${token || ''}
+TELEGRAM_CHAT_ID=${chatId || ''}
+N8N_WEBHOOK_URL=${settings.n8nWebhookUrl || ''}
+`;
   try {
     fs.writeFileSync(envPath, envContent, 'utf8');
     addLog('INFO', 'SYSTEM · Settings updated and saved');
   } catch(e) {
     console.error('Save env error:', e);
+    addLog('ERROR', 'SYSTEM · Failed to save settings to .env');
   }
   
   res.json({ success: true, settings });
@@ -232,26 +262,85 @@ app.get('/api/search', async (req, res) => {
     const page = await browser.newPage();
     await page.goto(`https://www.ticketmaster.de/search?q=${encodeURIComponent(query)}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     
-    // Warten auf Ergebnisse (optional, max 3 sekunden)
-    await page.waitForTimeout(3000);
+    // Warten auf Ergebnisse
+    try {
+        await page.waitForSelector('a', { timeout: 5000 });
+    } catch(e) {}
     
     const results = await page.evaluate(() => {
         const resultItems = Array.from(document.querySelectorAll('a'));
         const unique = [];
         const seen = new Set();
+        
         resultItems.forEach(l => {
             const url = l.href;
-            const text = l.innerText ? l.innerText.replace(/\n/g, ' ').trim() : '';
+            let text = l.innerText ? l.innerText.replace(/\n/g, ' ').trim() : '';
+            
             if(text.length > 2 && url && (url.includes('/artist/') || url.includes('/event/')) && !seen.has(url)) {
-                // Filtere generische Links heraus, die nicht spezifisch sind
+                
+                // Filtere generische Links heraus
                 if(!url.endsWith('/artist/') && !url.endsWith('/event/')) {
                     seen.add(url);
-                    unique.push({ name: text, url: url });
+                    
+                    let type = 'Unbekannt';
+                    let info = '';
+                    let location = '';
+
+                    // Versuch, Location zu finden per Text-Analyse
+                    // Oft steht am Ende "Ort", aber wir haben nur den Text.
+                    // Bei Ticketmaster DE ist oft: "Eventname - Ort Datum" oder "Event, Ort, Datum"
+                    
+                    if(text.includes(',')) {
+                        const parts = text.split(',');
+                        // Nimm den vorletzten Teil wenn möglich (Datum ist oft letzter, oder vorletzter).
+                        // Wir suchen von hinten nach vorne nach Text der kein Datum ist.
+                        for(let i = parts.length - 1; i >= 0; i--) {
+                            let p = parts[i].trim();
+                            // Ignoriere Datum/Zeit
+                            if(!p.match(/\d{2}[\.\/]\d{2}/) && !p.match(/\d{2}:\d{2}/) && p.length > 3) {
+                                // Ignoriere "Tickets"
+                                if(!p.toLowerCase().includes('ticket')) {
+                                    location = p;
+                                    break;
+                                }
+                            }
+                        }
+                    } else if (text.includes('-')) {
+                         // Versuchen wir Bindestrich
+                         const parts = text.split('-');
+                          for(let i = parts.length - 1; i >= 0; i--) {
+                            let p = parts[i].trim();
+                             if(!p.match(/\d{2}[\.\/]\d{2}/) && !p.match(/\d{2}:\d{2}/) && p.length > 3) {
+                                if(!p.toLowerCase().includes('ticket')) {
+                                    location = p;
+                                    break;
+                                }
+                             }
+                          }
+                    }
+                    
+                    if(location) {
+                        // Cleanup location
+                        location = location.slice(0, 30); // Max length
+                    }
+
+                    if(url.includes('/artist/')) {
+                        type = 'ARTIST';
+                        info = 'Künstler-Seite';
+                    } else if(url.includes('/event/')) {
+                        type = 'EVENT';
+                        const dateMatch = text.match(/(\d{2}\.\d{2}\.\d{2,4})/);
+                        const timeMatch = text.match(/(\d{2}:\d{2})/);
+                        info = dateMatch ? dateMatch[0] : '';
+                        if(timeMatch) info += ' ' + timeMatch[0];
+                    }
+
+                    unique.push({ name: text, url: url, type, info, location }); 
                 }
             }
         });
-        return unique.slice(0, 15); // Max 15 Ergebnisse
-    });
+        return unique.slice(0, 20); 
+    }); 
     
     await page.close();
     res.json(results);
@@ -269,7 +358,10 @@ app.post('/api/trigger', async (req, res) => {
     monitor.triggers += 1;
     sendTelegramMessage('🚨 TEST ALARM!\n\nMonitor: ' + monitor.name + '\nStatus: ' + status + '\nURL: ' + monitor.url);
     addLog('WARN', 'MANUAL TRIGGER · ' + monitor.shortName + ' · Status zu ' + status);
-    res.json({ success: true, monitor });
+    
+    // Zirkuläre Referenz entfernen
+    const { _intervalId: _, ...safeMonitor } = monitor;
+    res.json({ success: true, monitor: safeMonitor });
   } else {
     res.status(404).json({ error: 'Monitor not found' });
   }

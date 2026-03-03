@@ -19,6 +19,7 @@ export function SetupPanel() {
 
   const [formToken, setFormToken] = useState("");
   const [formChatId, setFormChatId] = useState("");
+  const [formN8nUrl, setFormN8nUrl] = useState("");
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -27,6 +28,7 @@ export function SetupPanel() {
         setSettings(res.data);
         setFormToken(res.data.telegramToken || "");
         setFormChatId(res.data.telegramChatId || "");
+        setFormN8nUrl(res.data.n8nWebhookUrl || "");
       } catch (err) {
         console.error("Fehler beim Laden der Einstellungen", err);
       } finally {
@@ -41,7 +43,8 @@ export function SetupPanel() {
     try {
         const res = await axios.post(`${process.env.REACT_APP_API_URL || "http://localhost:3001"}/api/settings`, {
             telegramToken: formToken,
-            telegramChatId: formChatId
+            telegramChatId: formChatId,
+            n8nWebhookUrl: formN8nUrl
         });
         if(res.data.success) {
             setSettings(res.data.settings);
@@ -80,15 +83,13 @@ export function SetupPanel() {
           <label className="text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-2 flex items-center gap-2">
             <Link2 className="w-4 h-4"/> N8N Webhook URL
           </label>
-          <div className="flex bg-[#0A0A0A] p-3 rounded-md border border-[#222] relative group">
-            <code className="text-sm font-mono text-emerald-400 break-all">{settings.n8nWebhookUrl}</code>
-            <button 
-              onClick={() => copyToClipboard(settings.n8nWebhookUrl)}
-              className="absolute right-2 top-2 p-1.5 bg-[#222] hover:bg-[#333] rounded text-[#a1a1aa] transition-colors opacity-0 group-hover:opacity-100"
-              title="Kopieren"
-            >
-              <Copy className="w-4 h-4"/>
-            </button>
+          <div className="flex bg-[#0A0A0A] p-1 rounded-md border border-[#222] relative group">
+            <input 
+              value={formN8nUrl}
+              onChange={(e) => setFormN8nUrl(e.target.value)}
+              placeholder="https://n8n.example.com/webhook/..."
+              className="w-full bg-transparent border-none text-sm font-mono text-emerald-400 p-2 focus:ring-0 focus:outline-none placeholder-gray-700"
+            />
           </div>
           <p className="text-xs text-[#a1a1aa] mt-2">Diese URL wird aufgerufen, wenn ein Ticket im Status "AVAILABLE" ist.</p>
         </div>

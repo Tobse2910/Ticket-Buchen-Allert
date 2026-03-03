@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { PlusCircle, Ticket, Search, Loader2 } from "lucide-react";
 
@@ -17,25 +17,35 @@ export function AddEventPanel({ onAdded }: { onAdded?: () => void }) {
 
   // Search State
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<{name: string, url: string}[]>([]);
+  const [searchResults, setSearchResults] = useState<{name: string, url: string, type: string, info: string, location?: string}[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{type: "success" | "error", text: string} | null>(null);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if(!searchQuery.trim()) return;
+  // Auto-Search Effect
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchQuery.trim().length > 2 && mode === "search") {
+        performSearch();
+      } else if (searchQuery.trim().length <= 2) {
+          setSearchResults([]);
+      }
+    }, 600);
 
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, mode]);
+
+  const performSearch = async () => {
     setIsSearching(true);
-    setSearchResults([]);
+    // setSearchResults([]); // Don't clear immediately to avoid flicker
     setMessage(null);
 
     try {
       const res = await axios.get(`${process.env.REACT_APP_API_URL || "http://localhost:3001"}/api/search?q=${encodeURIComponent(searchQuery)}`);
       setSearchResults(res.data);
-      if(res.data.length === 0) {
-        setMessage({ type: "error", text: "Keine Ticketmaster Events für diese Suche gefunden." });
+      if(res.data.length === 0 && searchQuery.length > 3) {
+        // Optional: Zeige Hinweis, aber kein Fehler-Popup
       }
     } catch(err) {
       console.error(err);
@@ -43,6 +53,12 @@ export function AddEventPanel({ onAdded }: { onAdded?: () => void }) {
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if(!searchQuery.trim()) return;
+    performSearch();
   };
 
   const handleAddEvent = async (eventName: string, eventUrl: string, eventInterval: number = 30, tPlatform: "ticketmaster"|"custom" = "ticketmaster") => {
@@ -148,21 +164,43 @@ export function AddEventPanel({ onAdded }: { onAdded?: () => void }) {
               <div className="space-y-3">
                 <label className="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-2">Ergebnisse</label>
                 {searchResults.map((res, i) => (
-                  <div key={i} className="flex items-center justify-between bg-[#0A0A0A] border border-[#333] p-4 rounded-md">
+                  <div key={i} className="flex items-center justify-between bg-[#0A0A0A] border border-[#333] p-4 rounded-md group hover:border-[#444] transition-colors">
                     <div className="flex-1 pr-4">
-                      <p className="text-white text-sm font-medium mb-1">{res.name}</p>
-                      <a href={res.url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 text-xs truncate max-w-xs block">
-                        {res.url}
-                      </a>
+                      
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${res.type === 'ARTIST' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                           {res.type === 'ARTIST' ? 'KÜNSTLER' : 'EVENT'}
+                        </span>
+                        {res.location && (
+                           <span className="text-[10px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded uppercase">
+                             {res.location}
+                           </span>
+                        )}
+                        {res.info && (
+                           <span className="text-[10px] text-gray-500 font-mono">
+                             {res.info}
+                           </span>
+                        )}
+                      </div>
+
+                      <p className="text-white text-sm font-medium mb-1 line-clamp-1">{res.name}</p>
+                      
+                      <div className="flex items-center gap-2">
+                        <a href={res.url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 text-xs truncate max-w-[200px] block opacity-70 hover:opacity-100">
+                          {res.url}
+                        </a>
+                        {/* Optional: Add a check button or similar */}
+                      </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleAddEvent(res.name, res.url, 30, "ticketmaster")}
                       disabled={loading}
-                      className="shrink-0 flex items-center gap-1.5 text-xs font-medium bg-[#222] hover:bg-[#333] text-emerald-400 border border-[#333] py-2 px-4 rounded transition-colors disabled:opacity-50"
+                      title="Status prüfen & Überwachung starten"
+                      className="shrink-0 flex items-center gap-1.5 text-xs font-medium bg-[#222] hover:bg-emerald-500/10 hover:text-emerald-500 hover:border-emerald-500/30 text-[#a1a1aa] border border-[#333] py-2 px-4 rounded transition-all disabled:opacity-50"
                     >
                       <PlusCircle className="w-4 h-4" />
-                      Add
+                      Prüfen & Alarm
                     </button>
                   </div>
                 ))}
