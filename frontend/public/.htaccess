@@ -1,0 +1,15 @@
+Options -MultiViews
+
+# config.js nie cachen (enthält die aktuelle Backend-URL)
+<FilesMatch "config\.js$">
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+</FilesMatch>
+
+RewriteEngine On
+RewriteBase /betafahse/Ticket-Buchen-Allert/
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+RewriteRule ^ index.html [L]

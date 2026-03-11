@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
+import { API_URL } from "./api";
 import { Activity, Server, Clock, AlertCircle, PlayCircle, CheckCircle2, XCircle, LayoutDashboard, Bell, Settings, Activity as HeartPulse, PlusCircle, Trash2, Menu, X, Info } from "lucide-react";
 import { AlertsPanel } from "./components/AlertsPanel";
 import { SetupPanel } from "./components/SetupPanel";
@@ -7,7 +8,10 @@ import { HealthPanel } from "./components/HealthPanel";
 import { AddEventPanel } from "./components/AddEventPanel";
 import { InfoPanel } from "./components/InfoPanel";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:3001/api";
+const API_BASE_URL = API_URL;
+
+// ngrok-Warnseite im Browser überspringen (gilt für alle axios-Calls global)
+axios.defaults.headers.common["ngrok-skip-browser-warning"] = "1";
 
 const STATUS_CONFIG: Record<string, any> = {
   AVAILABLE:  { label: "Verfügbar",     bg: "bg-emerald-500/10", text: "text-emerald-500", border: "border-emerald-500/20", icon: CheckCircle2 },
@@ -41,33 +45,69 @@ function PingBar({ ms }: { ms: number }) {
   );
 }
 
+const CARD_BORDER: Record<string, string> = {
+  AVAILABLE: "border-emerald-500/60 shadow-emerald-500/10 shadow-lg",
+  WAITING:   "border-rose-500/30",
+  QUEUE:     "border-amber-500/40",
+  OFFLINE:   "border-[#2A2A2A]",
+  ERROR:     "border-rose-500/40",
+};
+
+const STATUS_DOT: Record<string, string> = {
+  AVAILABLE: "bg-emerald-500 animate-pulse",
+  WAITING:   "bg-rose-500",
+  QUEUE:     "bg-amber-500 animate-pulse",
+  OFFLINE:   "bg-gray-500",
+  ERROR:     "bg-rose-500",
+};
+
 function MonitorPanel({ m, onTrigger, onDelete }: { m: any, onTrigger: any, onDelete: any }) {
+  const borderClass = CARD_BORDER[m.status] || CARD_BORDER.OFFLINE;
+  const dotClass    = STATUS_DOT[m.status]   || STATUS_DOT.OFFLINE;
+  const isWatch = m.mode === 'SEARCH_WATCH';
   return (
-    <div className="bg-[#111111] border border-[#2A2A2A] rounded-2xl p-6 transition-all duration-300 hover:border-[#3A3A3A] group flex flex-col justify-between hidden-card-shadow">
+    <div className={`bg-[#111111] border rounded-2xl p-4 md:p-6 transition-all duration-300 group flex flex-col justify-between hidden-card-shadow ${borderClass}`}>
       <div>
         <div className="flex justify-between items-start mb-4">
           <div className="space-y-1.5 flex-1 pr-4">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center rounded-md bg-[#222] px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-600/20">
-                {m.shortName}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Status-Punkt */}
+              <span className={`w-4 h-4 rounded-full shrink-0 ${dotClass}`} title={m.status} />
+              <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${isWatch ? 'bg-amber-500/10 text-amber-400 ring-amber-500/20' : 'bg-[#222] text-gray-400 ring-gray-600/20'}`}>
+                {isWatch ? '📡 RADAR' : m.shortName}
               </span>
+              {(m.city) && (
+                <span className="inline-flex items-center rounded-md bg-indigo-500/10 px-2 py-1 text-xs font-medium text-indigo-400 ring-1 ring-inset ring-indigo-500/20">
+                  📍 {m.city}
+                </span>
+              )}
               <button 
                 onClick={() => onDelete(m.id)}
-                className="text-gray-500 hover:text-red-500 transition-colors p-1"
+                className="text-gray-500 hover:text-red-500 transition-colors p-1.5 touch-manipulation ml-auto"
                 title="Monitor löschen"
               >
                 <Trash2 size={14} />
               </button>
             </div>
-            <h3 className="text-xl font-semibold text-white tracking-tight break-all cursor-pointer hover:text-indigo-400 transition-colors" onClick={() => window.open(m.url, '_blank')} title="Ticketmaster Link öffnen">{m.name}</h3>
+            <h3 className="text-base md:text-xl font-semibold text-white tracking-tight break-words cursor-pointer hover:text-indigo-400 transition-colors line-clamp-2" onClick={() => window.open(m.url, '_blank')} title="Link öffnen">{m.name}</h3>
+            {isWatch && m.searchQuery && (
+              <p className="text-xs text-amber-400/70 font-mono mt-1">🔍 Suche: „{m.searchQuery}{m.city ? ` ${m.city}` : ''}"</p>
+            )}
           </div>
           <StatusBadge status={m.status} />
         </div>
 
-        <div className="mt-6 mb-6">
-          <div className="text-sm font-medium text-gray-400 mb-2">Ping Latenz</div>
-          <PingBar ms={m.ping} />
-        </div>
+        {!isWatch && (
+          <div className="mt-6 mb-6">
+            <div className="text-sm font-medium text-gray-400 mb-2">Ping Latenz</div>
+            <PingBar ms={m.ping} />
+          </div>
+        )}
+        {isWatch && (
+          <div className="mt-4 mb-6 p-3 bg-amber-500/5 border border-amber-500/15 rounded-xl text-xs text-amber-400/80">
+            Beobachtet Ticketmaster auf neue Events. Alarm bei jedem Neu-Listing.
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-4 border-t border-[#2A2A2A] pt-4">
           <div>
@@ -79,19 +119,21 @@ function MonitorPanel({ m, onTrigger, onDelete }: { m: any, onTrigger: any, onDe
             <div className="text-sm font-semibold text-gray-200">{m.interval}s</div>
           </div>
           <div>
-            <div className="text-xs text-gray-500 mb-1">Trigger</div>
+            <div className="text-xs text-gray-500 mb-1">{isWatch ? 'Neue Events' : 'Trigger'}</div>
             <div className={`text-sm font-semibold ${m.triggers > 0 ? "text-emerald-500" : "text-gray-200"}`}>{m.triggers}</div>
           </div>
         </div>
       </div>
 
-      <button
-        onClick={() => onTrigger(m.id)}
-        className="mt-6 w-full flex items-center justify-center gap-2 bg-[#1A1A1A] hover:bg-[#222222] text-white border border-[#333] py-2.5 rounded-xl text-sm font-medium transition-all group-hover:border-[#444]"
-      >
-        <PlayCircle size={16} className="text-gray-400 group-hover:text-white transition-colors"/>
-        Simulieren
-      </button>
+      {!isWatch && (
+        <button
+          onClick={() => onTrigger(m.id)}
+          className="mt-6 w-full flex items-center justify-center gap-2 bg-[#1A1A1A] hover:bg-[#222222] text-white border border-[#333] py-2.5 rounded-xl text-sm font-medium transition-all group-hover:border-[#444]"
+        >
+          <PlayCircle size={16} className="text-gray-400 group-hover:text-white transition-colors"/>
+          Simulieren
+        </button>
+      )}
     </div>
   );
 }
@@ -102,6 +144,9 @@ export default function App() {
   const [monitors, setMonitors] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [toast, setToast] = useState<any>(null);
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
+  const [reconnectIn, setReconnectIn] = useState<number>(0);
   
   const fetchMonitors = useCallback(async () => {
     try {
@@ -121,15 +166,37 @@ export default function App() {
     }
   }, []);
 
+  const checkHealth = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/health`, { timeout: 4000 });
+      setBackendOnline(true);
+      setReconnectIn(0);
+      if (res.data?.tunnelUrl) setTunnelUrl(res.data.tunnelUrl);
+    } catch {
+      setBackendOnline(false);
+    }
+  }, []);
+
+  // Countdown-Anzeige wenn offline
+  useEffect(() => {
+    if (!backendOnline && backendOnline !== null) {
+      setReconnectIn(10);
+      const t = setInterval(() => setReconnectIn(v => Math.max(0, v - 1)), 1000);
+      return () => clearInterval(t);
+    }
+  }, [backendOnline]);
+
   useEffect(() => {
     fetchMonitors();
     fetchLogs();
+    checkHealth();
     const interval = setInterval(() => {
         fetchMonitors();
         fetchLogs();
+        checkHealth();
     }, 3000);
     return () => clearInterval(interval);
-  }, [fetchMonitors, fetchLogs]);
+  }, [fetchMonitors, fetchLogs, checkHealth]);
 
   const handleTrigger = async (id: number) => {
     const mon = monitors.find(m => m.id === id);
@@ -165,7 +232,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-gray-200 font-sans selection:bg-[#333]">
       {toast && (
-        <div className="fixed top-6 right-6 z-[1000] bg-[#111111] border border-[#2A2A2A] rounded-xl p-4 shadow-2xl flex items-start gap-4 max-w-sm animate-fade-in">
+        <div className="fixed top-4 right-4 left-4 sm:left-auto sm:right-6 sm:top-6 z-[1000] bg-[#111111] border border-[#2A2A2A] rounded-xl p-4 shadow-2xl flex items-start gap-4 sm:max-w-sm animate-fade-in">
            <div className="bg-emerald-500/20 p-2 rounded-full mt-0.5">
              <CheckCircle2 className="text-emerald-500 w-5 h-5" />
            </div>
@@ -177,7 +244,7 @@ export default function App() {
       )}
 
       <nav className="sticky top-0 z-[100] bg-[#0A0A0A]/80 backdrop-blur-md border-b border-[#2A2A2A]">
-        <div className="max-w-[1400px] mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-[1400px] mx-auto px-4 md:px-6 h-14 md:h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
               <Server className="text-white w-4 h-4" />
@@ -202,10 +269,21 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-             <div className="flex items-center gap-2 text-xs font-medium text-gray-400 bg-[#111] px-3 py-1.5 rounded-full border border-[#2A2A2A]">
-               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                 <span className="hidden md:inline">System Online</span>
-               </div>
+             <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border cursor-pointer ${
+               backendOnline === null ? 'text-gray-400 bg-[#111] border-[#2A2A2A]' :
+               backendOnline ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
+               'text-rose-400 bg-rose-500/10 border-rose-500/20'
+             }`} onClick={() => !backendOnline && checkHealth()} title={tunnelUrl || ''}>
+               <span className={`w-2 h-2 rounded-full ${
+                 backendOnline === null ? 'bg-gray-500 animate-pulse' :
+                 backendOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+               }`} />
+               <span className="hidden md:inline">
+                 {backendOnline === null ? 'Verbinde...' :
+                  backendOnline ? 'System Online' :
+                  reconnectIn > 0 ? `Offline – Retry in ${reconnectIn}s` : 'Reconnecting...'}
+               </span>
+             </div>
                
                <button 
                   onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -218,7 +296,7 @@ export default function App() {
 
           {/* Mobile Menu Dropdown */}
           {mobileMenuOpen && (
-            <div className="md:hidden border-t border-[#2A2A2A] bg-[#0A0A0A] p-4 absolute w-full left-0 shadow-xl">
+            <div className="md:hidden border-t border-[#2A2A2A] bg-[#0A0A0A] px-4 py-3 absolute w-full left-0 shadow-xl z-50">
                <div className="flex flex-col gap-2 bg-[#111] p-2 rounded-xl border border-[#222]">
                 {navItems.map(item => {
                   const Icon = item.icon;
@@ -241,15 +319,15 @@ export default function App() {
           )}
       </nav>
 
-      <main className="max-w-[1400px] mx-auto p-6 md:p-8">
+      <main className="max-w-[1400px] mx-auto p-4 md:p-8">
 
         <div style={{ display: tab === "dashboard" ? "block" : "none" }}>
           <div className="space-y-8 animate-fade-in">
             
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Übersicht</h1>
-                <p className="text-gray-400">Verwalte deine Termin- und Ticket-Monitore in Echtzeit.</p>
+                <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight mb-1 md:mb-2">Übersicht</h1>
+                <p className="text-gray-400 text-sm">Verwalte deine Ticket-Monitore in Echtzeit.</p>
               </div>
             </div>
 
@@ -266,7 +344,7 @@ export default function App() {
               </div>
               <div className="max-h-[350px] overflow-y-auto w-full">
                 {logs.map((l, idx) => (
-                  <div key={idx} className="flex flex-col sm:flex-row gap-2 sm:gap-4 px-6 py-3 border-b border-[#1A1A1A] hover:bg-[#151515] transition-colors text-sm">
+                  <div key={idx} className="flex flex-col sm:flex-row gap-1 sm:gap-4 px-3 md:px-6 py-3 border-b border-[#1A1A1A] hover:bg-[#151515] transition-colors text-sm">
                     <span className="text-gray-500 font-mono text-xs w-24 shrink-0">{l.ts}</span>
                     <span className={`text-xs font-medium uppercase w-16 shrink-0 ${l.level === "WARN" ? "text-amber-500" : l.level === "ERR" ? "text-rose-500" : "text-blue-400"}`}>{l.level}</span>
                     <span className="text-gray-300 truncate">{l.msg}</span>

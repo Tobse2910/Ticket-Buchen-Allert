@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Copy, Save, Loader2, Link2, Key, MessageCircle, Settings as SettingsIcon, CheckCircle2, XCircle } from "lucide-react";
+import { API_BASE } from "../api";
 
 interface Settings {
   n8nWebhookUrl: string;
@@ -24,7 +25,7 @@ export function SetupPanel() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const res = await axios.get(`${process.env.REACT_APP_API_URL || "http://localhost:3001"}/api/settings`);
+        const res = await axios.get(`${API_BASE}/api/settings`);
         setSettings(res.data);
         setFormToken(res.data.telegramToken || "");
         setFormChatId(res.data.telegramChatId || "");
@@ -41,7 +42,7 @@ export function SetupPanel() {
   const handleSave = async () => {
     setSaving(true);
     try {
-        const res = await axios.post(`${process.env.REACT_APP_API_URL || "http://localhost:3001"}/api/settings`, {
+        const res = await axios.post(`${API_BASE}/api/settings`, {
             telegramToken: formToken,
             telegramChatId: formChatId,
             n8nWebhookUrl: formN8nUrl
@@ -70,7 +71,7 @@ export function SetupPanel() {
   if (!settings) return <div className="text-red-500 flex justify-center">Fehler beim Laden</div>;
 
   return (
-    <div className="bg-[#111] border border-[#222] rounded-xl p-6">
+    <div className="bg-[#111] border border-[#222] rounded-xl p-4 md:p-6">
       <h3 className="text-white font-medium mb-6 flex items-center gap-2">
         <SettingsIcon className="w-5 h-5 text-indigo-500" />
         Backend Konfiguration
@@ -127,7 +128,7 @@ export function SetupPanel() {
            <button 
              onClick={handleSave} 
              disabled={saving}
-             className="flex items-center gap-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 py-2.5 px-6 rounded-md shadow-lg transition-colors disabled:opacity-50"
+             className="w-full sm:w-auto flex items-center justify-center gap-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 py-2.5 px-6 rounded-md shadow-lg transition-colors disabled:opacity-50 touch-manipulation"
            >
              {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>} Speichern
            </button>
@@ -136,7 +137,7 @@ export function SetupPanel() {
         {/* General Config */}
         <div className="bg-[#1a1a1a] p-4 rounded-lg border border-[#333]">
           <h4 className="text-sm font-medium text-white mb-3">Allgemeine Scraping-Parameter</h4>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <span className="block text-xs text-[#a1a1aa] mb-1">User-Agent</span>
               <input type="text" disabled value={settings.userAgent} className="w-full bg-[#0A0A0A] border border-[#222] rounded-md p-2 text-xs text-white" />
@@ -156,7 +157,7 @@ export function SetupPanel() {
       </div>
 
       {toast && (
-        <div className="fixed top-6 right-6 z-[1000] bg-[#111111] border border-[#2A2A2A] rounded-xl p-4 shadow-2xl flex items-start gap-4 max-w-sm animate-fade-in">
+        <div className="fixed top-4 right-4 left-4 sm:left-auto sm:right-6 sm:top-6 z-[1000] bg-[#111111] border border-[#2A2A2A] rounded-xl p-4 shadow-2xl flex items-start gap-4 sm:max-w-sm animate-fade-in">
           <div className={`${toast.type === "success" ? "bg-emerald-500/20" : "bg-red-500/20"} p-2 rounded-full mt-0.5`}>
             {toast.type === "success" ? (
               <CheckCircle2 className="text-emerald-500 w-5 h-5" />

@@ -1,14 +1,34 @@
 # Abhängigkeiten
 node_modules/
 
-# Umgebungsvariablen und Credentials (WICHTIG!)
+# Umgebungsvariablen und Credentials (NIEMALS committen!)
 .env
 backend/.env
 
-# Build Ordner
+# Deployment-Skripte mit persönlichen Daten
+deploy_ftp.ps1
+update-tunnel-url.ps1
+
+# Aktuelle Tunnel-URL (wechselt bei jedem Neustart)
+frontend/public/config.js
+
+# Nutzer-Daten (gespeicherte Monitore)
+backend/data/
+
+# Build-Artefakte
 build/
 dist/
+*.zip
+
+# Temporäre Deploy-Ordner
+deploy_tmp/
+
+# Nicht benötigte Skripte
+cloudflared-start.sh
 
 # Mac / Windows System Dateien
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log

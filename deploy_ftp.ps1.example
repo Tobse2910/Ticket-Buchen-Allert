@@ -1,0 +1,27 @@
+# deploy_ftp.ps1 – FTP-Upload für den freigegebenen Webserver
+# Kopiere diese Datei als "deploy_ftp.ps1" und trage deine FTP-Daten ein.
+
+$ftpHost   = "DEIN-FTP-HOST"           # z.B. 123.456.789.0
+$ftpUser   = "DEIN-FTP-BENUTZER"
+$ftpPass   = "DEIN-FTP-PASSWORT"
+$remotePath = "/htdocs/DEIN-PFAD/Ticket-Buchen-Allert"
+$localDir  = "C:\PFAD\ZU\Ticket-Buchen-Allert\deploy_tmp"
+
+$files = Get-ChildItem -Path $localDir -Recurse -File
+
+foreach ($file in $files) {
+    $relativePath = $file.FullName.Substring($localDir.Length).Replace("\", "/")
+    $remoteFile = "ftp://${ftpHost}${remotePath}${relativePath}"
+    Write-Host "Upload: $relativePath"
+    $result = curl.exe --ssl-reqd --insecure -s -S `
+        --user "${ftpUser}:${ftpPass}" `
+        --ftp-create-dirs `
+        -T $file.FullName `
+        $remoteFile 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "FEHLER bei $relativePath : $result"
+    }
+}
+
+Write-Host ""
+Write-Host "Deploy fertig!"

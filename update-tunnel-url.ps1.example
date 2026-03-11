@@ -1,0 +1,48 @@
+# update-tunnel-url.ps1
+# Kopiere diese Datei als "update-tunnel-url.ps1" und trage deine FTP-Daten ein.
+# Führe dieses Skript nach jedem "docker compose up" aus – es holt die neue
+# Cloudflare Tunnel-URL und deployt das Frontend automatisch.
+
+Write-Host "Warte auf Backend + Cloudflare Tunnel..." -ForegroundColor Cyan
+
+$tunnelUrl = $null
+$maxWait = 120
+$waited = 0
+
+while (-not $tunnelUrl -and $waited -lt $maxWait) {
+    Start-Sleep -Seconds 3
+    $waited += 3
+    try {
+        $r = Invoke-WebRequest -Uri "http://localhost:3001/api/health" -UseBasicParsing -TimeoutSec 3
+        $data = $r.Content | ConvertFrom-Json
+        if ($data.tunnelUrl) { $tunnelUrl = $data.tunnelUrl }
+    } catch {}
+    Write-Host "  Warte... ($waited/$maxWait s)" -ForegroundColor Gray
+}
+
+if (-not $tunnelUrl) {
+    Write-Host "Fehler: Tunnel-URL konnte nicht ermittelt werden." -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Tunnel-URL: $tunnelUrl" -ForegroundColor Green
+
+# config.js aktualisieren
+$configPath = Join-Path $PSScriptRoot "frontend\public\config.js"
+[System.IO.File]::WriteAllText($configPath, "window.API_URL = `"$tunnelUrl/api`";")
+Write-Host "config.js aktualisiert" -ForegroundColor Green
+
+# Frontend neu bauen
+Write-Host "Frontend wird gebaut..." -ForegroundColor Cyan
+docker compose build --no-cache frontend
+docker compose up -d --force-recreate frontend
+
+# FTP Deploy
+Write-Host "FTP-Deploy..." -ForegroundColor Cyan
+if (Test-Path "deploy_tmp") { Remove-Item -Recurse -Force "deploy_tmp" }
+New-Item -ItemType Directory -Path "deploy_tmp" | Out-Null
+docker run --rm -v "${PWD}\deploy_tmp:/out" ticket-buchen-allert-frontend sh -c "cp -r /usr/share/nginx/html/. /out/"
+powershell.exe -ExecutionPolicy Bypass -File "$PSScriptRoot\deploy_ftp.ps1"
+Remove-Item -Recurse -Force "deploy_tmp"
+
+Write-Host "Fertig! Backend: $tunnelUrl" -ForegroundColor Green

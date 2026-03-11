@@ -1,0 +1,5 @@
+// Diese Datei wird von update-tunnel-url.ps1 automatisch befüllt.
+// Manuell: Trage hier die URL deines laufenden Backends ein.
+// Bei lokalem Test: http://localhost:3001/api
+// Bei Cloudflare Tunnel: https://DEINE-URL.trycloudflare.com/api
+window.API_URL = "http://localhost:3001/api";
