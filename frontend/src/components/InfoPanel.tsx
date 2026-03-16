@@ -3,7 +3,7 @@ import { Info, HelpCircle, Bot, Link as LinkIcon, ShieldCheck, Box } from "lucid
 
 export function InfoPanel() {
   return (
-    <div className="bg-[#111] border border-[#222] rounded-xl p-6 lg:p-8 animate-fade-in shadow-xl">
+    <div className="bg-[#111] border border-[#222] rounded-xl p-6 lg:p-8 animate-fade-in shadow-xl panel-shell">
       <div className="flex items-center gap-3 mb-8 pb-4 border-b border-[#2A2A2A]">
         <div className="p-3 bg-indigo-500/10 rounded-lg">
           <Info className="w-6 h-6 text-indigo-400" />

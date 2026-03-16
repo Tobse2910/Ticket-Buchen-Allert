@@ -407,10 +407,14 @@ N8N_WEBHOOK_URL=${settings.n8nWebhookUrl || ''}
 
 // Cloudflare Tunnel: startet cloudflared im Hintergrund, extrahiert URL
 let tunnelUrl = null;
+let tunnelDisabled = false;
 function startCloudflared() {
+  if (tunnelDisabled) return;
+
   const proc = spawn('cloudflared', ['tunnel', '--url', 'http://localhost:3001', '--no-autoupdate'], {
     stdio: ['ignore', 'pipe', 'pipe']
   });
+
   const handleOutput = (data) => {
     const text = data.toString();
     const match = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
@@ -421,7 +425,23 @@ function startCloudflared() {
   };
   proc.stdout.on('data', handleOutput);
   proc.stderr.on('data', handleOutput);
+
+  proc.on('error', (err) => {
+    tunnelUrl = null;
+    if (err && err.code === 'ENOENT') {
+      tunnelDisabled = true;
+      addLog('WARN', 'TUNNEL · cloudflared nicht gefunden, Tunnel deaktiviert');
+      console.warn('⚠️ cloudflared nicht gefunden. Backend läuft ohne Tunnel weiter.');
+      return;
+    }
+    addLog('ERROR', 'TUNNEL · Startfehler: ' + (err.message || 'unbekannt'));
+    console.error('cloudflared Fehler:', err.message || err);
+  });
+
   proc.on('close', (code) => {
+    if (tunnelDisabled) {
+      return;
+    }
     console.log('cloudflared beendet (Code ' + code + ') – Neustart in 5s...');
     tunnelUrl = null;
     setTimeout(startCloudflared, 5000);

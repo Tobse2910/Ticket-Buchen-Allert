@@ -1,7 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { PlusCircle, Ticket, Search, Loader2, Radar } from "lucide-react";
 import { API_BASE } from "../api";
+
+const sortSearchResults = (data: any[]) => {
+  const parseDate = (info: string): number => {
+    const m = info ? info.match(/(\d{2})\.(\d{2})\.(\d{2,4})/) : null;
+    if (!m) return Infinity;
+    const year = m[3].length === 2 ? 2000 + parseInt(m[3]) : parseInt(m[3]);
+    return new Date(year, parseInt(m[2]) - 1, parseInt(m[1])).getTime();
+  };
+
+  return [...data].sort((a, b) => {
+    if (a.type === 'ARTIST' && b.type !== 'ARTIST') return 1;
+    if (a.type !== 'ARTIST' && b.type === 'ARTIST') return -1;
+    if (a.type === 'ARTIST' && b.type === 'ARTIST') return 0;
+    return parseDate(a.info) - parseDate(b.info);
+  });
+};
 
 export function AddEventPanel({ onAdded }: { onAdded?: () => void }) {
   const [mode, setMode] = useState<"search" | "manual" | "watch">("search");
@@ -39,7 +55,7 @@ const [searchResults, setSearchResults] = useState<{name: string, url: string, t
     }
   };
 
-  const autoCheckEvents = (results: {name: string, url: string, type: string, info: string, location?: string, tmId?: string}[]) => {
+  const autoCheckEvents = useCallback((results: {name: string, url: string, type: string, info: string, location?: string, tmId?: string}[]) => {
     const events = results.filter(r => r.type === 'EVENT');
     const initial: Record<string, {loading: boolean, status: string | null}> = {};
     events.forEach(e => { initial[e.url] = { loading: true, status: null }; });
@@ -61,10 +77,28 @@ const [searchResults, setSearchResults] = useState<{name: string, url: string, t
       }
     };
     checkInBatches();
-  };
+  }, []);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{type: "success" | "error", text: string} | null>(null);
+
+  const performSearch = useCallback(async () => {
+    setIsSearching(true);
+    setMessage(null);
+
+    try {
+      const combinedQuery = [searchQuery.trim(), city.trim()].filter(Boolean).join(' ');
+      const res = await axios.get(`${API_BASE}/api/search?q=${encodeURIComponent(combinedQuery)}`);
+      const sorted = sortSearchResults(res.data);
+      setSearchResults(sorted);
+      autoCheckEvents(sorted);
+    } catch(err) {
+      console.error(err);
+      setMessage({ type: "error", text: "Fehler bei der Event-Suche." });
+    } finally {
+      setIsSearching(false);
+    }
+  }, [searchQuery, city, autoCheckEvents]);
 
   // Auto-Search Effect
   useEffect(() => {
@@ -78,40 +112,7 @@ const [searchResults, setSearchResults] = useState<{name: string, url: string, t
     }, 600);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, city, mode]);
-
-  const sortResults = (data: any[]) => {
-    const parseDate = (info: string): number => {
-      const m = info ? info.match(/(\d{2})\.(\d{2})\.(\d{2,4})/) : null;
-      if (!m) return Infinity;
-      const year = m[3].length === 2 ? 2000 + parseInt(m[3]) : parseInt(m[3]);
-      return new Date(year, parseInt(m[2]) - 1, parseInt(m[1])).getTime();
-    };
-    return [...data].sort((a, b) => {
-      if (a.type === 'ARTIST' && b.type !== 'ARTIST') return 1;
-      if (a.type !== 'ARTIST' && b.type === 'ARTIST') return -1;
-      if (a.type === 'ARTIST' && b.type === 'ARTIST') return 0;
-      return parseDate(a.info) - parseDate(b.info);
-    });
-  };
-
-  const performSearch = async () => {
-    setIsSearching(true);
-    setMessage(null);
-
-    try {
-      const combinedQuery = [searchQuery.trim(), city.trim()].filter(Boolean).join(' ');
-      const res = await axios.get(`${API_BASE}/api/search?q=${encodeURIComponent(combinedQuery)}`);
-      const sorted = sortResults(res.data);
-      setSearchResults(sorted);
-      autoCheckEvents(sorted);
-    } catch(err) {
-      console.error(err);
-      setMessage({ type: "error", text: "Fehler bei der Event-Suche." });
-    } finally {
-      setIsSearching(false);
-    }
-  };
+  }, [searchQuery, city, mode, performSearch]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();

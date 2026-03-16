@@ -40,14 +40,14 @@ export function AlertsPanel() {
   if (loading) return <div className="text-[#a1a1aa] flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin" /></div>;
 
   return (
-    <div className="bg-[#111] border border-[#222] rounded-xl p-4 md:p-6">
+    <div className="bg-[#111] border border-[#222] rounded-xl p-4 md:p-6 panel-shell">
       <h3 className="text-white font-medium mb-6 flex items-center gap-2">
         <Bell className="w-5 h-5 text-amber-500" />
         Überwachungs-Alerts
       </h3>
       <div className="space-y-4">
         {monitors.map(m => (
-          <div key={m.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-[#1a1a1a] rounded-lg border border-[#333]">
+          <div key={m.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-[#1a1a1a] rounded-xl border border-[#333]">
             <div>
               <h4 className="text-white font-medium">{m.name}</h4>
               <p className="text-xs text-gray-400 mt-1">{m.triggers} Triggers bisher</p>
