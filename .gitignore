@@ -32,3 +32,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Einmalige Patch- und Wegwerf-Skripte
+fix_*.js
+temp_*
+test-frontend*.js
